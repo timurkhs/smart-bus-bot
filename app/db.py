@@ -79,7 +79,7 @@ class Database:
     #Выдача роли пользователю.
     def assign_role_to_user(self, user_id, role_id=None):
         if role_id is None:
-            role_id = SysRoleGuids.USER 
+            role_id = SysRoleGuids.USER.value
         
         with self.connection:
             return self.cursor.execute("""INSERT INTO `SysAdminUnitInRole` 

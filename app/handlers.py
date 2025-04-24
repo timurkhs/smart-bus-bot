@@ -28,15 +28,15 @@ async def cmd_start(message: Message, state: FSMContext):
 
 @router.message(Registration.user_name)
 async def add_name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
+    await state.update_data(user_name=message.text)
     await state.set_state(Registration.notification)
-    await message.answer("Хотите получать уведомления о ваших заявках?") #да нет клавиатура 
+    await message.answer("Хотите получать уведомления о ваших заявках?", reply_markup=nav.RegistrationMenuYesNo) #да нет клавиатура 
 
 @router.message(Registration.notification)
 async def add_name(message: Message, state: FSMContext):
-    if (message.text).lower() in [YesNoAnswer.YES, YesNoAnswer.NO]:
-        await state.update_data(notification = 1 if message.text.lower() == YesNoAnswer.YES else 2)
-        await message.answer("Вы успешно зарегестрировались") #меню клавиатура
+    if (message.text).lower() in [YesNoAnswer.YES.value, YesNoAnswer.NO.value]:
+        await state.update_data(notification = 1 if message.text.lower() == YesNoAnswer.YES else 0)
+        await message.answer("Вы успешно зарегестрировались", reply_markup = nav.mainMenuMarkupUser) #меню клавиатура
         data = await state.get_data()
         db.add_user(message.from_user.id, data['user_name'], data['notification'])
         await state.clear()
