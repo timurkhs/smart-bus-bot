@@ -2,7 +2,9 @@ import sqlite3
 import time
 import uuid
 from datetime import datetime, timedelta
+from enum import Enum
 
+from programmConsts.const import CaseStatusGuids, SysRoleGuids
 
 class Database:
     def __init__(self, db_file):
@@ -77,7 +79,7 @@ class Database:
     #Выдача роли пользователю.
     def assign_role_to_user(self, user_id, role_id=None):
         if role_id is None:
-            role_id = "00000000-0000-0000-0000-000000000001"  # Константа для роли "Пользователь"
+            role_id = SysRoleGuids.USER 
         
         with self.connection:
             return self.cursor.execute("""INSERT INTO `SysAdminUnitInRole` 
