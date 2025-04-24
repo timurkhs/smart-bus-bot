@@ -34,7 +34,7 @@ async def add_name(message: Message, state: FSMContext):
 
 @router.message(Registration.notification)
 async def add_name(message: Message, state: FSMContext):
-    if (message.text).lower() in [YesNoAnswer.YES, YesNoAnswer.NO]:
+    if (message.text).lower() in [YesNoAnswer.YES.value, YesNoAnswer.NO.value]:
         await state.update_data(notification = 1 if message.text.lower() == YesNoAnswer.YES else 2)
         await message.answer(RegistrationText.SUCCESSFUL_REGISTRATION.value) #меню клавиатура
         data = await state.get_data()
