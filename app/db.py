@@ -100,8 +100,6 @@ class Database:
             """, (telegramId,))
             
             return [row[0] for row in self.cursor.fetchall()]
-        
-    from datetime import datetime, timedelta
 
     
     #выполняет блокировку пользователя
@@ -126,4 +124,17 @@ class Database:
             # Проверяем, был ли обновлен пользователь
             return self.cursor.rowcount > 0
 
+    def get_case_count(self, status_id: str = None) -> int:
+        """
+        Возвращает количество записей в таблице Case с возможностью фильтрации по статусу
+        
+        :param status_id: ID статуса (из CaseStatusGuids) для фильтрации, необязательный
+        :return: Количество записей (int)
+        """
+        with self.connection:
+            if status_id:
+                self.cursor.execute("SELECT COUNT(*) FROM `Case` WHERE `StatusId` = ?", (status_id,))
+            else:
+                self.cursor.execute("SELECT COUNT(*) FROM `Case`")
+            return self.cursor.fetchone()[0]
 
