@@ -12,7 +12,11 @@ class CaseStatusGuids(Enum):
 
 class SysRoleGuids(Enum):
     """GUID ролей пользователей"""
-    ADMINISTRATOR = "57252a05-b288-4e13-8dfc-183c89295d40"
-    MODERATOR = "42c07419-7367-414e-89c8-c4dd37e3017a"
-    USER = "e82ea4bb-6d94-4b01-a321-5aa915204a04"
-    EXECUTOR = "cd40e20c-d646-4eb6-99bf-4f9348cdc854"
+    ADMINISTRATOR = "57252a05-b288-4e13-8dfc-183c89295d40" # Администратор
+    MODERATOR = "42c07419-7367-414e-89c8-c4dd37e3017a" # Модератор заявок
+    USER = "e82ea4bb-6d94-4b01-a321-5aa915204a04" # Пользователь
+    EXECUTOR = "cd40e20c-d646-4eb6-99bf-4f9348cdc854" # Подрядчик
+
+class ConfigurationConst(Enum):
+    """Конфигурационные константы"""
+    EMPTY_LOCATION = "Адрес не указан пользователем"
