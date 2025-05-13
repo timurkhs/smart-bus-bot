@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 from programmConsts.const import CaseStatusGuids, SysRoleGuids
+from models.caseModel import Case
 
 class Database:
     def __init__(self, db_file):
@@ -138,3 +139,176 @@ class Database:
                 self.cursor.execute("SELECT COUNT(*) FROM `Case`")
             return self.cursor.fetchone()[0]
 
+
+    def create_case(
+        self,
+        code: str,
+        description: str,
+        addres: str,
+        coordinator_id: str | None,
+        owner_id: str | None,
+        image: str | None,
+        location: str | None,
+        initiator_id: str,
+        name: str
+    ) -> str:
+        """
+        Создает новую запись в таблице Case (обращение на ремонт).
+        """
+        with self.connection:
+            case_id = str(uuid.uuid4())
+            status_id = CaseStatusGuids.NEW.value  # Статус по умолчанию - "Новый"
+            
+            self.cursor.execute("""
+                INSERT INTO `Case` (
+                    `Id`, `Code`, `Description`, `Addres`, `StatusId`,
+                    `CoordinatorId`, `OwnerId`, `Image`, `Location`,
+                    `InitiatorId`, `Name`
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                case_id, code, description, addres, status_id,
+                coordinator_id, owner_id, image, location,
+                initiator_id, name
+            ))
+            
+            return case_id
+    def get_user_id_by_telegram_id(self, telegram_id: int) -> str | None:
+        """
+        Возвращает UUID пользователя (Id из SysAdminUnit) по его Telegram ID.
+        """
+        with self.connection:
+            self.cursor.execute(
+                "SELECT `Id` FROM `SysAdminUnit` WHERE `TelegramId` = ?", 
+                (telegram_id,)
+            )
+            result = self.cursor.fetchone()
+            return result[0] if result else None
+        
+    def get_all_cases(self) -> list[Case]:
+        """
+        Получает все обращения из базы данных с подставленными именами из связанных таблиц.
+        
+        Returns:
+            list[Case]: Список объектов Case с заполненными именами
+        """
+        with self.connection:
+            self.cursor.execute("""
+                SELECT 
+                    c.Id,
+                    c.Code,
+                    c.Description,
+                    c.Addres,
+                    cs.Name AS status_name,
+                    coord.Name AS coordinator_name,
+                    owner.Name AS owner_name,
+                    c.Image,
+                    c.Location,
+                    init.Name AS initiator_name,
+                    c.Name
+                FROM 
+                    Case c
+                LEFT JOIN CaseStatus cs ON c.StatusId = cs.Id
+                LEFT JOIN SysAdminUnit coord ON c.CoordinatorId = coord.Id
+                LEFT JOIN SysAdminUnit owner ON c.OwnerId = owner.Id
+                LEFT JOIN SysAdminUnit init ON c.InitiatorId = init.Id
+            """)
+            
+            cases = []
+            for row in self.cursor.fetchall():
+                case = Case(
+                    id=row[0],
+                    code=row[1],
+                    description=row[2],
+                    addres=row[3],
+                    status_name=row[4],
+                    coordinator_name=row[5],
+                    owner_name=row[6],
+                    image=row[7],
+                    location=row[8],
+                    initiator_name=row[9],
+                    name=row[10]
+                )
+                cases.append(case)
+                
+            return cases
+
+
+    def get_cases_by_initiator(self, initiator_id: str) -> list[Case]:
+        """
+        Получает обращения конкретного инициатора из базы данных с подставленными именами из связанных таблиц.
+        
+        Args:
+            initiator_id: UUID инициатора, чьи заявки нужно получить
+            
+        Returns:
+            list[Case]: Список объектов Case с заполненными именами
+        """
+        with self.connection:
+            self.cursor.execute("""
+                SELECT 
+                    c.Id,
+                    c.Code,
+                    c.Description,
+                    c.Addres,
+                    cs.Name AS status_name,
+                    coord.Name AS coordinator_name,
+                    owner.Name AS owner_name,
+                    c.Image,
+                    c.Location,
+                    init.Name AS initiator_name,
+                    c.Name
+                FROM 
+                    "Case" c
+                LEFT JOIN CaseStatus cs ON c.StatusId = cs.Id
+                LEFT JOIN SysAdminUnit coord ON c.CoordinatorId = coord.Id
+                LEFT JOIN SysAdminUnit owner ON c.OwnerId = owner.Id
+                LEFT JOIN SysAdminUnit init ON c.InitiatorId = init.Id
+                WHERE c.InitiatorId = ?
+            """, (initiator_id,))
+            
+            cases = []
+            for row in self.cursor.fetchall():
+                case = Case(
+                    id=row[0],
+                    code=row[1],
+                    description=row[2],
+                    addres=row[3],
+                    status_name=row[4],
+                    coordinator_name=row[5],
+                    owner_name=row[6],
+                    image=row[7],
+                    location=row[8],
+                    initiator_name=row[9],
+                    name=row[10]
+                )
+                cases.append(case)
+                
+            return cases
+        
+    def get_case_by_id(self, case_id: str) -> Case | None:
+        """Получает полные данные о заявке по ID"""
+        with self.connection:
+            self.cursor.execute("""
+                SELECT 
+                    c.Id, c.Code, c.Description, c.Addres,
+                    cs.Name AS status_name, coord.Name AS coordinator_name,
+                    owner.Name AS owner_name, c.Image, c.Location,
+                    init.Name AS initiator_name, c.Name
+                FROM "Case" c
+                LEFT JOIN CaseStatus cs ON c.StatusId = cs.Id
+                LEFT JOIN SysAdminUnit coord ON c.CoordinatorId = coord.Id
+                LEFT JOIN SysAdminUnit owner ON c.OwnerId = owner.Id
+                LEFT JOIN SysAdminUnit init ON c.InitiatorId = init.Id
+                WHERE c.Id = ?
+            """, (case_id,))
+            
+            row = self.cursor.fetchone()
+            if not row:
+                return None
+                
+            return Case(
+                id=row[0], code=row[1], description=row[2],
+                addres=row[3], status_name=row[4], coordinator_name=row[5],
+                owner_name=row[6], image=row[7], location=row[8],
+                initiator_name=row[9], name=row[10]
+        )
