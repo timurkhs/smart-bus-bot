@@ -2,6 +2,8 @@ from aiogram.types import (ReplyKeyboardMarkup, KeyboardButton,
                            InlineKeyboardMarkup, InlineKeyboardButton)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 import programmConsts.murkupCaptionConst as markupCaption
+from models.caseModel import Case
+from typing import List, Tuple
 
 #_________USER MAIN MENU MARKUPS__________ 
 
@@ -68,3 +70,83 @@ async def anser_get_photo():
                  InlineKeyboardButton(text=markupCaption.YesNoAnswerMarkupText.NO, callback_data='next_step_report_photo'))
 
     return keyboard.adjust(2).as_markup()
+
+async def user_cases_markups(
+    cases: List[Case],
+    page: int = 0,
+    items_per_page: int = 5) -> InlineKeyboardMarkup:
+    """
+    Создает инлайн-клавиатуру с пагинацией
+    
+    Args:
+        cases: Список всех заявок
+        page: Текущая страница (начинается с 0)
+        items_per_page: Количество заявок на странице
+        
+    Returns:
+        InlineKeyboardMarkup: Клавиатура с компактной пагинацией
+    """
+    keyboard = InlineKeyboardBuilder()
+    
+    # Разбиваем на страницы
+    total_pages = (len(cases) + items_per_page - 1) // items_per_page
+    page_cases = cases[page*items_per_page : (page+1)*items_per_page]
+    
+    # Добавляем заявки (по одной на строку)
+    for case in page_cases:
+        keyboard.row(InlineKeyboardButton(
+            text=case.name,
+            callback_data=f"case_detail_{case.id}"
+        ))
+    
+    # Добавляем пагинацию (если нужно)
+    if len(cases) > items_per_page:
+        pagination_buttons = []
+        
+        # Кнопка "Назад" если не первая страница
+        if page > 0:
+            pagination_buttons.append(
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data=f"cases_page_{page-1}"
+                ))
+        
+        # Кнопка "Вперед" если не последняя страница
+        if page < total_pages - 1:
+            pagination_buttons.append(
+                InlineKeyboardButton(
+                    text="Вперед ➡️",
+                    callback_data=f"cases_page_{page+1}"
+                ))
+        
+        # Добавляем все кнопки пагинации в одну строку
+        if pagination_buttons:
+            keyboard.row(*pagination_buttons)
+    
+    # Кнопка закрытия всегда в отдельной строке
+    keyboard.row(
+        InlineKeyboardButton(
+            text="❌ Закрыть",
+            callback_data="close_cases_list"
+        ))
+    
+    return keyboard.as_markup()
+
+async def inline_case_detail_markup(page: int) -> InlineKeyboardMarkup:
+    """
+    Создает клавиатуру для детального просмотра заявки
+    """
+    keyboard = InlineKeyboardBuilder()
+    
+    keyboard.row(
+        InlineKeyboardButton(
+            text="⬅️ Назад к списку",
+            callback_data=f"cases_page_{page}"
+        ),
+        InlineKeyboardButton(
+            text="🏠 В главное меню",
+            callback_data="back_to_main_menu"
+        )
+    )
+    
+    return keyboard.as_markup()

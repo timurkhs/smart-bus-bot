@@ -6,6 +6,8 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.context import FSMContext
 from geopy.geocoders import Nominatim
+from datetime import datetime, timedelta
+from models.caseModel import Case
 import re
 
 import app.markups as nav
@@ -27,6 +29,29 @@ class SendReport(StatesGroup):
     location = State()
     description = State()
     photo = State()
+
+
+def create_case_in_db(
+        code: str, #передается всегда
+        description: str, #всегда
+        addres: str, #всегда
+        image: str | None, #передается по желанию пользователя
+        location: str | None, #передается по желанию пользователя
+        telegram_id: str, #передается автоматически
+        ):
+    """Выполняет создание заявки в базе данных"""
+    initiaor_id = db.get_user_id_by_telegram_id(telegram_id=telegram_id)
+    today = datetime.now().strftime("%Y%m%d")
+    name =  f"Обращение-{today}-{code}"
+    db.create_case(code=code,
+                   description=description,
+                   addres=addres,
+                   coordinator_id=None,
+                   owner_id=None,
+                   image=image,
+                   location=location,
+                   initiator_id=initiaor_id,
+                   name=name)
 
 def get_location_from_datastate(location_string):
     numbers = re.findall(r"[-+]?\d+\.\d+", location_string)
@@ -75,6 +100,8 @@ def get_main_menu_text(user_id):
     elif (configurationConsts.SysRoleGuids.USER.value in roles):
         return textCaption.MainMenuText.USER_MAIN_MENU_TEXT.value
 
+#region Регистрация пользователя
+
 #Регистрационное сообщение 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
@@ -97,10 +124,16 @@ async def add_name(message: Message, state: FSMContext):
         data = await state.get_data()
         db.add_user(message.from_user.id, data['user_name'], data['notification'])
         await state.clear()
-        
-#Блок действий пользователя 
 
-#Нажатие на кнопку - Подать заявку, вопрос пользователю хочет ли он ее подать.
+#endregion 
+ 
+
+
+#region Блок действий пользователя 
+
+#region Нажатие на кнопку - Подать заявку
+
+# вопрос пользователю хочет ли он ее подать.
 @router.message(F.text == markupCaption.MainMenuMarkupText.SEND_REPORT.value)
 async def send_report(message: Message):
     await message.answer(textCaption.SendReportText.ANSWER_FOR_USER.value, 
@@ -190,6 +223,8 @@ async def no_send_location(callback: CallbackQuery, state: FSMContext, bot: Bot)
                                                     location=location),
                                reply_markup=get_menu_markup(callback.from_user.id))
 
+    create_case_in_db(number, description, address, None, location, callback.from_user.id)
+
 #Пользователь хочет прикрепить фото.
 @router.callback_query(F.data == 'get_photo')
 async def send_location(callback: CallbackQuery, state: FSMContext, bot: Bot):
@@ -220,4 +255,144 @@ async def get_photo(message: Message, state: FSMContext):
                                parse_mode="Markdown",
                                reply_markup=get_menu_markup(message.from_user.id))
     
+    create_case_in_db(number, description, address, file_id, location, message.from_user.id)
+    #Отправить сообщение всем менеджерам о поступлении новой заявки.
     await state.clear()
+
+#endregion
+
+
+#region Нажатие на кнопку - Мои заявки 
+@router.message(F.text == markupCaption.MainMenuMarkupText.MY_REPORTS.value)
+async def show_cases(message: Message):
+    # Получаем ID пользователя
+    initiator_id = db.get_user_id_by_telegram_id(message.from_user.id)
+    if not initiator_id:
+        await message.answer("Ошибка: пользователь не найден")
+        return
+
+    # Получаем все заявки пользователя
+    cases = db.get_cases_by_initiator(initiator_id=initiator_id)
+    
+    if not cases:
+        await message.answer("📭 У вас пока нет заявок")
+        return
+    
+    # Формируем текст с количеством заявок
+    total_cases = len(cases)
+    pages = (total_cases + 4) // 5  # Вычисляем общее количество страниц
+    
+    await message.answer(
+        f"📋 Ваши заявки (всего {total_cases}, страница 1/{pages}):",
+        reply_markup=await nav.user_cases_markups(cases, page=0)
+    )
+
+@router.callback_query(F.data.startswith("cases_page_"))
+async def handle_pagination(callback: CallbackQuery):
+    page = int(callback.data.split("_")[-1])
+    initiator_id = db.get_user_id_by_telegram_id(callback.from_user.id)
+    cases = db.get_cases_by_initiator(initiator_id=initiator_id)
+    
+    total_pages = (len(cases) + 4) // 5  # 5 заявок на страницу
+    
+    if callback.message.photo: 
+        await callback.message.delete()
+        # Отправляем новое сообщение с обновленными данными
+        await callback.message.answer(
+            f"📋 Ваши заявки (всего {len(cases)}, страница {page+1}/{total_pages}):",
+            reply_markup=await nav.user_cases_markups(cases, page)
+        )
+    else:
+        await callback.message.edit_text(
+            f"📋 Ваши заявки (всего {len(cases)}, страница {page+1}/{total_pages}):",
+            reply_markup=await nav.user_cases_markups(cases, page))
+    
+    await callback.answer()
+
+
+@router.callback_query(F.data == "close_cases_list")
+async def close_list(callback: CallbackQuery):
+    await callback.message.delete()
+    await callback.answer("Список закрыт")
+
+
+@router.callback_query(F.data.startswith("case_detail_"))
+async def show_case_detail(callback: CallbackQuery):
+    # Извлекаем ID заявки
+    case_id = callback.data.split("_")[-1]
+    case = db.get_case_by_id(case_id)
+    
+    if not case:
+        await callback.answer("Заявка не найдена", show_alert=True)
+        return
+
+    # Получаем номер страницы из предыдущего сообщения
+    page = 0
+    if "страница" in callback.message.text:
+        page_match = re.search(r"страница (\d+)", callback.message.text)
+        if page_match:
+            page = int(page_match.group(1)) - 1
+
+    # Формируем текст сообщения
+    text = (
+        f"📌 <b>{case.name}</b>\n\n"
+        f"📍 <b>Адрес:</b> {case.addres}\n"
+        f"🔄 <b>Статус:</b> {case.status_name}\n"
+        f"📝 <b>Описание:</b>\n{case.description}\n"
+    )
+    
+    # Добавляем локацию, если есть
+    if case.location:
+        text += f"\n🗺️ <b>Локация:</b> {case.location}"
+
+    # Если есть фото
+    if case.image:
+        try:
+            await callback.message.delete()
+            await callback.message.answer_photo(
+                photo=case.image,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=await nav.inline_case_detail_markup(page=page)
+            )
+            
+            # Отправляем локацию отдельно, если есть
+            if case.location:
+                lat, lon = map(float, case.location.split(','))
+                await callback.message.answer_location(
+                    latitude=lat,
+                    longitude=lon
+                )
+            
+            await callback.answer()
+            return
+        except Exception as e:
+            print(f"Ошибка отправки фото: {e}")
+            text += "\n⚠️ Не удалось загрузить вложение"
+
+    # Если фото нет - отправляем текст с клавиатурой
+    await callback.message.edit_text(
+        text=text,
+        parse_mode="HTML",
+        reply_markup=await nav.inline_case_detail_markup(page=page)
+    )
+    await callback.answer()
+
+#endregion
+
+#region Нажатие на кнопку - Справка или Контакты
+
+@router.message(F.text == markupCaption.MainMenuMarkupText.HELP.value)
+async def show_cases(message: Message):
+    await message.answer(textCaption.MainMenuText.HELP_TEXT.value,
+                         reply_markup=get_menu_markup(message.from_user.id))
+
+
+@router.message(F.text == markupCaption.MainMenuMarkupText.CONTACTS.value)
+async def show_cases(message: Message):
+    await message.answer(textCaption.MainMenuText.CONTACT_TEXT.value,
+                         reply_markup=get_menu_markup(message.from_user.id))
+
+#endregion
+
+#endregion
