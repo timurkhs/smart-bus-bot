@@ -25,8 +25,7 @@ mainMenuMarkupAdministrator = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text
 #______MODERATOR MAIN MENU ______________
 mainMenuMarkupModerator = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text=markupCaption.ModeratorMenuMarkupsText.STATISTICS.value)],
                                                [KeyboardButton(text=markupCaption.ModeratorMenuMarkupsText.ACTIVE_REPORTS.value)],
-                                               [KeyboardButton(text=markupCaption.ModeratorMenuMarkupsText.IN_PROGRESS_REPORTS.value)],
-                                               [KeyboardButton(text=markupCaption.ModeratorMenuMarkupsText.COMPLAINT.value)]], 
+                                               [KeyboardButton(text=markupCaption.ModeratorMenuMarkupsText.IN_PROGRESS_REPORTS.value)]], 
                                                resize_keyboard=True,)
 #____________________________________
 

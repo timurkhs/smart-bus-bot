@@ -312,3 +312,130 @@ class Database:
                 owner_name=row[6], image=row[7], location=row[8],
                 initiator_name=row[9], name=row[10]
         )
+    
+
+
+    def is_moderator(self, telegram_id: int) -> bool:
+        """Проверяет, является ли пользователь модератором"""
+        role_ids = self.get_user_role_ids(telegram_id)
+        return SysRoleGuids.MODERATOR.value in role_ids
+
+    def get_moderator_statistics(self, moderator_telegram_id: int) -> dict:
+        """Возвращает статистику в унифицированном формате"""
+        moderator_id = self.get_user_id_by_telegram_id(moderator_telegram_id)
+        if not moderator_id:
+            return {}
+
+        with self.connection:
+            # Общее количество заявок
+            self.cursor.execute("SELECT COUNT(*) FROM `Case`")
+            total = self.cursor.fetchone()[0]
+
+            # Статистика по статусам
+            status_stats = {}
+            for status in CaseStatusGuids:
+                status_id = status.value
+                
+                # Всего заявок в статусе
+                self.cursor.execute(
+                    "SELECT COUNT(*) FROM `Case` WHERE StatusId = ?", 
+                    (status_id,)
+                )
+                total_in_status = self.cursor.fetchone()[0]
+                
+                # Заявок модератора в статусе
+                self.cursor.execute("""
+                    SELECT COUNT(*) 
+                    FROM `Case` 
+                    WHERE StatusId = ? AND CoordinatorId = ?
+                """, (status_id, moderator_id))
+                moderator_in_status = self.cursor.fetchone()[0]
+                
+                status_stats[status.name] = {
+                    'total': total_in_status,
+                    'moderator': moderator_in_status,
+                    'ratio': moderator_in_status / total_in_status if total_in_status > 0 else 0
+                }
+            
+            return {
+                'total_cases': total,
+                'by_status': status_stats  # Гарантированно правильный ключ
+            }
+
+    def format_statistics(self, stats: dict) -> str:
+        """Форматирует статистику в заданный текстовый формат"""
+        if not stats or 'by_status' not in stats:
+            return "❌ Нет данных для формирования отчёта"
+        
+        # Словарь для отображения статусов
+        status_display = {
+            'NEW': '🆕 Новые',
+            'UNDER_REVIEW': '🔍 На рассмотрении',
+            'ACCEPTED': '✅ Принятые в работу',
+            'IN_PROGRESS': '🛠 В процессе ремонта',
+            'POSTPONED': '⏸ Отложенные',
+            'COMPLETED': '🏁 Выполненные',
+            'REJECTED': '❌ Отклоненные'
+        }
+        
+        # Собираем строки отчёта
+        lines = [f"📊 Всего заявок: {stats.get('total_cases', 0)}\n"]
+        
+        # Добавляем данные по каждому статусу
+        for status_name, data in stats['by_status'].items():
+            display_name = status_display.get(status_name, status_name)
+            lines.append(
+                f"{display_name}:\n"
+                f"• Всего: {data.get('total', 0)}\n"
+                f"• Назначено мне: {data.get('moderator', 0)}\n"
+                f"• Доля: {data.get('ratio', 0):.1%}\n"
+            )
+        
+        return "\n".join(lines)
+
+    def get_moderator_cases(self, moderator_telegram_id: int, status_id: str = None) -> list:
+        """
+        Возвращает заявки модератора с возможностью фильтрации по статусу
+        
+        Args:
+            moderator_telegram_id: Telegram ID модератора
+            status_id: GUID статуса для фильтрации (опционально)
+        
+        Returns:
+            Список объектов Case
+        """
+        moderator_id = self.get_user_id_by_telegram_id(moderator_telegram_id)
+        if not moderator_id:
+            return []
+
+        with self.connection:
+            query = """
+                SELECT 
+                    c.Id, c.Code, c.Description, c.Addres,
+                    cs.Name AS status_name, coord.Name AS coordinator_name,
+                    owner.Name AS owner_name, c.Image, c.Location,
+                    init.Name AS initiator_name, c.Name
+                FROM `Case` c
+                LEFT JOIN CaseStatus cs ON c.StatusId = cs.Id
+                LEFT JOIN SysAdminUnit coord ON c.CoordinatorId = coord.Id
+                LEFT JOIN SysAdminUnit owner ON c.OwnerId = owner.Id
+                LEFT JOIN SysAdminUnit init ON c.InitiatorId = init.Id
+                WHERE c.CoordinatorId = ?
+            """
+            params = [moderator_id]
+            
+            if status_id:
+                query += " AND c.StatusId = ?"
+                params.append(status_id)
+            
+            self.cursor.execute(query, params)
+            
+            return [
+                Case(
+                    id=row[0], code=row[1], description=row[2],
+                    addres=row[3], status_name=row[4], coordinator_name=row[5],
+                    owner_name=row[6], image=row[7], location=row[8],
+                    initiator_name=row[9], name=row[10]
+                )
+                for row in self.cursor.fetchall()
+            ]

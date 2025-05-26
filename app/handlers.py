@@ -4,10 +4,14 @@ from aiogram.enums import ContentType
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.storage.base import StorageKey
+from aiogram.types import BufferedInputFile 
 from aiogram.fsm.context import FSMContext
 from geopy.geocoders import Nominatim
 from datetime import datetime, timedelta
 from models.caseModel import Case
+import matplotlib.pyplot as plt
+from io import BytesIO
+from typing import Dict
 import re
 
 import app.markups as nav
@@ -30,6 +34,112 @@ class SendReport(StatesGroup):
     description = State()
     photo = State()
 
+async def send_statistics_chart(message: Message, stats: dict):
+    """Генерация графика с общими и персональными показателями"""
+    try:
+        # Проверка данных
+        if not stats or 'by_status' not in stats:
+            await message.answer("❌ Нет данных для построения графика")
+            return
+
+        # Настройка стиля
+        plt.style.use('ggplot')
+        plt.rcParams['font.family'] = 'DejaVu Sans'
+        
+        # Подготовка данных
+        status_names = {
+            'NEW': 'Новые',
+            'UNDER_REVIEW': 'На рассмотрении',
+            'ACCEPTED': 'Принятые',
+            'IN_PROGRESS': 'В работе',
+            'POSTPONED': 'Отложенные',
+            'COMPLETED': 'Выполненные',
+            'REJECTED': 'Отклоненные'
+        }
+        
+        # Фильтруем и сортируем данные
+        labels = []
+        totals = []
+        moderator_counts = []
+        
+        for status_name, data in stats['by_status'].items():
+            if data['total'] > 0:  # Показываем только статусы с заявками
+                labels.append(status_names.get(status_name, status_name))
+                totals.append(data['total'])
+                moderator_counts.append(data['moderator'])
+
+        if not labels:
+            await message.answer("📊 Нет данных для отображения")
+            return
+
+        # Создаем график
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        # Ширина столбцов
+        bar_width = 0.35
+        x = range(len(labels))
+        
+        # Столбцы для общих показателей
+        bars_total = ax.bar(
+            [i - bar_width/2 for i in x],
+            totals,
+            bar_width,
+            label='Всего заявок',
+            color='#4C72B0'
+        )
+        
+        # Столбцы для персональных показателей
+        bars_moderator = ax.bar(
+            [i + bar_width/2 for i in x],
+            moderator_counts,
+            bar_width,
+            label='Мои заявки',
+            color='#55A868'
+        )
+        
+        # Настройка отображения
+        ax.set_title("Статистика заявок", pad=20, fontsize=14)
+        ax.set_ylabel("Количество заявок", fontsize=12)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=45, ha='right')
+        ax.legend()
+        
+        # Добавляем подписи значений
+        ax.bar_label(bars_total, padding=3, fontsize=9)
+        ax.bar_label(bars_moderator, padding=3, fontsize=9)
+        
+        plt.tight_layout()
+
+        # Сохраняем в буфер
+        buf = BytesIO()
+        plt.savefig(buf, format='png', dpi=120, bbox_inches='tight')
+        buf.seek(0)
+        
+        # Создаем InputFile
+        chart_file = BufferedInputFile(buf.getvalue(), filename="statistics.png")
+        
+        # Формируем подпись
+        caption = (
+            f"📊 Всего заявок: {stats.get('total_cases', 0)}\n"
+            f"👤 Назначено мне: {sum(data['moderator'] for data in stats['by_status'].values())}\n"
+            f"🔄 Обновлено: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+        
+        # Отправляем фото
+        await message.answer_photo(
+            photo=chart_file,
+            caption=caption
+        )
+        
+    except Exception as e:
+        await message.answer(f"⚠️ Ошибка визуализации: {str(e)}")
+    finally:
+        plt.close()
+        buf.close()
+
+async def send_notification_all_moderator_new_case(message: Message):
+    """Отправить уведомление модераторам о новой заявке"""
+    pass
 
 def create_case_in_db(
         code: str, #передается всегда
@@ -394,5 +504,34 @@ async def show_cases(message: Message):
                          reply_markup=get_menu_markup(message.from_user.id))
 
 #endregion
+
+#endregion
+
+
+#region Блок действий модератора
+
+#region Статистика
+@router.message(F.text == markupCaption.ModeratorMenuMarkupsText.STATISTICS.value)
+async def handle_statistics(message: Message):
+    if not db.is_moderator(message.from_user.id):
+        await message.answer("❌ Доступ только для модераторов")
+        return
+    
+    try:
+        # Получаем статистику
+        stats = db.get_moderator_statistics(message.from_user.id)
+        
+        # Форматируем и отправляем текстовый отчёт
+        text_report = db.format_statistics(stats)
+        await message.answer(text_report)
+        
+        # Отправляем график (оставляем как было)
+        await send_statistics_chart(message, stats)
+        
+    except Exception as e:
+        await message.answer(f"⚠️ Ошибка: {str(e)}")
+#endregion
+
+
 
 #endregion
