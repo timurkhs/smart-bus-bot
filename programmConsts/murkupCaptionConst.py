@@ -18,9 +18,8 @@ class AdministratorMenuMarkupText(Enum):
 
 class ModeratorMenuMarkupsText(Enum):
      STATISTICS = '📊 Статистика'
-     ACTIVE_REPORTS = '📝 Активные заявки'
-     IN_PROGRESS_REPORTS = '✅ Заявки в работе'
-     COMPLAINT = '❗️ Жалобы'
+     ACTIVE_REPORTS = '📝 Новые заявки'
+     IN_PROGRESS_REPORTS = '✅ Мои заявки в работе'
 
 class ExecutorMenuMarkupsText(Enum):
      STATISTICS = '📊 Статистика'
